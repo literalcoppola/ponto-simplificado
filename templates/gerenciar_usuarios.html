@@ -28,7 +28,20 @@
         <div class="card-header fw-bold">Adicionar Novo Funcionário</div>
         <div class="card-body">
             <form method="POST" action="/adicionar_usuario">
-                </form>
+                <div class="row g-2 align-items-center">
+                  <div class="col-md">
+                    <label for="usuario" class="visually-hidden">Nome do usuário</label>
+                    <input type="text" name="usuario" id="usuario" class="form-control" placeholder="Nome do usuário" required>
+                  </div>
+                  <div class="col-md">
+                    <label for="senha" class="visually-hidden">Senha inicial</label>
+                    <input type="password" name="senha" id="senha" class="form-control" placeholder="Senha inicial" required>
+                  </div>
+                  <div class="col-md-auto d-grid d-md-block">
+                    <button type="submit" class="btn btn-primary">Adicionar</button>
+                  </div>
+                </div>
+              </form>
         </div>
     </div>
 
