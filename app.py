@@ -31,11 +31,13 @@ def get_db():
 def converter_para_fuso_local(utc_dt):
     if not isinstance(utc_dt, datetime):
         try:
+            # Tenta converter de string, se necessário
             utc_dt = datetime.strptime(str(utc_dt), '%Y-%m-%d %H:%M:%S')
         except (ValueError, TypeError):
-            return utc_dt
+             return utc_dt
     fuso_local = pytz.timezone("America/Sao_Paulo")
     utc_tz = pytz.utc
+    # Garante que o datetime tenha um fuso horário antes de converter
     if utc_dt.tzinfo is None:
         utc_dt = utc_tz.localize(utc_dt)
     return utc_dt.astimezone(fuso_local)
@@ -55,6 +57,7 @@ def calcular_horas_e_agrupar(registros):
             'longitude': reg['longitude']
         })
     resultado_final = {}
+    # Ordena os dias do mais recente para o mais antigo
     sorted_keys = sorted(agrupado.keys(), key=lambda k: datetime.strptime(k[1], '%d/%m/%Y'), reverse=True)
     for chave in sorted_keys:
         dia = chave[1]
@@ -85,7 +88,7 @@ def calcular_horas_e_agrupar(registros):
             'incompleto': incompleto
         }
     return resultado_final
-    
+
 # --- ROTA SECRETA PARA INICIALIZAR O BANCO DE DADOS NA NUVEM ---
 @app.route('/init-db-super-secreto')
 def init_db_route():
@@ -180,9 +183,6 @@ def registrar():
     conn.close()
     flash(f"'{novo_tipo}' registrada com sucesso!", "success")
     return redirect(url_for('funcionario'))
-    
-# --- ROTAS DO ADMINISTRADOR ---
-# (O restante das rotas de admin seguem o mesmo padrão corrigido)
 
 @app.route('/painel')
 def painel():
@@ -190,17 +190,14 @@ def painel():
     conn = get_db()
     cursor = conn.cursor()
     is_postgres = hasattr(conn, 'cursor_factory')
-    
     filtro_usuario = request.args.get('filtro_usuario')
     data_inicio = request.args.get('data_inicio')
     data_fim = request.args.get('data_fim')
-    
     query = "SELECT r.*, u.usuario FROM registros r JOIN usuarios u ON r.usuario_id = u.id WHERE 1=1"
     params = []
-    
     if filtro_usuario:
         query += f" AND r.usuario_id = {'%s' if is_postgres else '?'}"
-        params.append(filtro_usuario)
+        params.append(int(filtro_usuario))
     if data_inicio:
         query += f" AND date(r.timestamp) >= {'%s' if is_postgres else '?'}"
         params.append(data_inicio)
@@ -208,20 +205,14 @@ def painel():
         query += f" AND date(r.timestamp) <= {'%s' if is_postgres else '?'}"
         params.append(data_fim)
     query += " ORDER BY r.timestamp DESC"
-    
     cursor.execute(query, params)
     registros_db = cursor.fetchall()
-    
     cursor.execute("SELECT id, usuario FROM usuarios WHERE is_admin = 0 ORDER BY usuario")
     usuarios_para_filtro = cursor.fetchall()
-    
     cursor.close()
     conn.close()
-    
     registros_agrupados = calcular_horas_e_agrupar(registros_db)
     return render_template("painel.html", registros_agrupados=registros_agrupados, usuarios_para_filtro=usuarios_para_filtro, nome_usuario=session.get('usuario_nome'))
-
-# ... (outras rotas de admin como /gerenciar_usuarios, /adicionar_usuario, etc. seguindo o padrão de usar cursor)
 
 @app.route('/gerenciar_usuarios')
 def gerenciar_usuarios():
@@ -308,14 +299,13 @@ def excluir_usuario(usuario_id):
     conn.close()
     flash("Usuário e todos os seus registros foram excluídos com sucesso.", "success")
     return redirect(url_for('gerenciar_usuarios'))
-
+    
 @app.route('/exportar')
 def exportar():
     if not session.get('is_admin'): return redirect(url_for('index'))
     conn = get_db()
     cursor = conn.cursor()
     is_postgres = hasattr(conn, 'cursor_factory')
-    # (Lógica de filtros igual ao painel)
     filtro_usuario = request.args.get('filtro_usuario')
     data_inicio = request.args.get('data_inicio')
     data_fim = request.args.get('data_fim')
@@ -323,7 +313,7 @@ def exportar():
     params = []
     if filtro_usuario:
         query += f" AND r.usuario_id = {'%s' if is_postgres else '?'}"
-        params.append(filtro_usuario)
+        params.append(int(filtro_usuario))
     if data_inicio:
         query += f" AND date(r.timestamp) >= {'%s' if is_postgres else '?'}"
         params.append(data_inicio)
@@ -347,6 +337,7 @@ def exportar():
     mem = io.BytesIO(output.getvalue().encode('utf-8'))
     output.close()
     return send_file(mem, mimetype="text/csv", as_attachment=True, download_name="relatorio_ponto.csv")
-    
+
+# --- INICIAR APLICAÇÃO ---
 if __name__ == "__main__":
     app.run(debug=True)
