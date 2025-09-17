@@ -11,13 +11,11 @@ import pytz
 from collections import defaultdict
 
 app = Flask(__name__)
-
-# --- CONFIGURAÇÃO ---
 app.secret_key = os.environ.get('SECRET_KEY', 'chave-secreta-local-para-testes')
 bcrypt = Bcrypt(app)
 
 # --- FUNÇÕES AUXILIARES ---
-
+# (Nenhuma mudança aqui)
 def get_db():
     db_url = os.environ.get('DATABASE_URL')
     if db_url:
@@ -31,18 +29,17 @@ def get_db():
 def converter_para_fuso_local(utc_dt):
     if not isinstance(utc_dt, datetime):
         try:
-            # Tenta converter de string, se necessário
             utc_dt = datetime.strptime(str(utc_dt), '%Y-%m-%d %H:%M:%S')
         except (ValueError, TypeError):
-             return utc_dt
+            return utc_dt
     fuso_local = pytz.timezone("America/Sao_Paulo")
     utc_tz = pytz.utc
-    # Garante que o datetime tenha um fuso horário antes de converter
     if utc_dt.tzinfo is None:
         utc_dt = utc_tz.localize(utc_dt)
     return utc_dt.astimezone(fuso_local)
 
 def calcular_horas_e_agrupar(registros):
+    # ... (código existente sem alterações)
     agrupado = defaultdict(lambda: {'registros': [], 'usuario': ''})
     for reg in registros:
         utc_dt = reg['timestamp']
@@ -57,7 +54,6 @@ def calcular_horas_e_agrupar(registros):
             'longitude': reg['longitude']
         })
     resultado_final = {}
-    # Ordena os dias do mais recente para o mais antigo
     sorted_keys = sorted(agrupado.keys(), key=lambda k: datetime.strptime(k[1], '%d/%m/%Y'), reverse=True)
     for chave in sorted_keys:
         dia = chave[1]
@@ -89,9 +85,10 @@ def calcular_horas_e_agrupar(registros):
         }
     return resultado_final
 
-# --- ROTA SECRETA PARA INICIALIZAR O BANCO DE DADOS NA NUVEM ---
+# --- ROTA SECRETA (Sem mudanças) ---
 @app.route('/init-db-super-secreto')
 def init_db_route():
+    # ... (código existente sem alterações)
     conn = get_db()
     cursor = conn.cursor()
     is_postgres = hasattr(conn, 'cursor_factory')
@@ -137,6 +134,10 @@ def login():
         session['usuario_id'] = user['id']
         session['usuario_nome'] = user['usuario']
         session['is_admin'] = user['is_admin']
+        
+        # MUDANÇA 1: Adiciona a mensagem de boas-vindas
+        flash(f"Login bem-sucedido. Bem-vindo(a), {user['usuario']}!", "success")
+        
         return redirect(url_for('painel') if user['is_admin'] else url_for('funcionario'))
     else:
         flash("Usuário ou senha inválidos!", "danger")
@@ -150,6 +151,7 @@ def logout():
 
 @app.route('/funcionario')
 def funcionario():
+    # ... (código existente sem alterações)
     if 'usuario_id' not in session or session.get('is_admin'): return redirect(url_for('index'))
     conn = get_db()
     cursor = conn.cursor()
@@ -168,22 +170,36 @@ def funcionario():
 @app.route('/registrar', methods=["POST"])
 def registrar():
     if 'usuario_id' not in session: return redirect(url_for('index'))
+    
     latitude = request.form.get('latitude')
     longitude = request.form.get('longitude')
+    
+    # MUDANÇA 2: Converte valores vazios para None (NULL no banco)
+    lat_db = float(latitude) if latitude and latitude.strip() else None
+    lon_db = float(longitude) if longitude and longitude.strip() else None
+
     conn = get_db()
     cursor = conn.cursor()
     is_postgres = hasattr(conn, 'cursor_factory')
     placeholder = '%s' if is_postgres else '?'
+    
     cursor.execute(f"SELECT tipo FROM registros WHERE usuario_id = {placeholder} ORDER BY timestamp DESC LIMIT 1", (session['usuario_id'],))
     ultimo = cursor.fetchone()
+    
     novo_tipo = "Entrada" if not ultimo or ultimo['tipo'] == "Saida" else "Saida"
-    cursor.execute(f"INSERT INTO registros (usuario_id, tipo, latitude, longitude) VALUES ({placeholder}, {placeholder}, {placeholder}, {placeholder})", (session['usuario_id'], novo_tipo, latitude, longitude))
+    
+    cursor.execute(f"INSERT INTO registros (usuario_id, tipo, latitude, longitude) VALUES ({placeholder}, {placeholder}, {placeholder}, {placeholder})", 
+                   (session['usuario_id'], novo_tipo, lat_db, lon_db))
+    
     conn.commit()
     cursor.close()
     conn.close()
+    
     flash(f"'{novo_tipo}' registrada com sucesso!", "success")
     return redirect(url_for('funcionario'))
-
+    
+# --- ROTAS DO ADMINISTRADOR ---
+# (Nenhuma mudança no restante do código)
 @app.route('/painel')
 def painel():
     if not session.get('is_admin'): return redirect(url_for('index'))
@@ -299,7 +315,7 @@ def excluir_usuario(usuario_id):
     conn.close()
     flash("Usuário e todos os seus registros foram excluídos com sucesso.", "success")
     return redirect(url_for('gerenciar_usuarios'))
-    
+
 @app.route('/exportar')
 def exportar():
     if not session.get('is_admin'): return redirect(url_for('index'))
@@ -337,7 +353,6 @@ def exportar():
     mem = io.BytesIO(output.getvalue().encode('utf-8'))
     output.close()
     return send_file(mem, mimetype="text/csv", as_attachment=True, download_name="relatorio_ponto.csv")
-
-# --- INICIAR APLICAÇÃO ---
+    
 if __name__ == "__main__":
     app.run(debug=True)
