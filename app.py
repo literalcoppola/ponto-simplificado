@@ -13,30 +13,27 @@ from collections import defaultdict
 app = Flask(__name__)
 
 # --- CONFIGURAÇÃO ---
-# MUITO IMPORTANTE: Lê as chaves secretas das variáveis de ambiente na Render
-# Usa um valor padrão caso não encontre (para testes locais)
 app.secret_key = os.environ.get('SECRET_KEY', 'chave-secreta-local-para-testes')
 bcrypt = Bcrypt(app)
 
 # --- FUNÇÕES AUXILIARES ---
 
-# IMPORTANTE: Esta função agora se conecta ao PostgreSQL na Render ou ao SQLite localmente
 def get_db():
     db_url = os.environ.get('DATABASE_URL')
     if db_url:
-        # Conexão de Produção (PostgreSQL na Render)
         conn = psycopg2.connect(db_url)
-        # Permite acessar colunas por nome, como um dicionário
         conn.cursor_factory = DictCursor
     else:
-        # Conexão de Desenvolvimento (SQLite local)
         conn = sqlite3.connect("database.db")
         conn.row_factory = sqlite3.Row
     return conn
 
 def converter_para_fuso_local(utc_dt):
     if not isinstance(utc_dt, datetime):
-        utc_dt = datetime.strptime(utc_dt, '%Y-%m-%d %H:%M:%S')
+        try:
+            utc_dt = datetime.strptime(utc_dt, '%Y-%m-%d %H:%M:%S')
+        except (ValueError, TypeError):
+             return utc_dt # Retorna o valor original se não for um formato de data válido
     fuso_local = pytz.timezone("America/Sao_Paulo")
     return utc_dt.replace(tzinfo=pytz.utc).astimezone(fuso_local)
 
@@ -55,7 +52,7 @@ def calcular_horas_e_agrupar(registros):
             'longitude': reg['longitude']
         })
     resultado_final = {}
-    for (usuario_id, dia), info in agrupado.items():
+    for (usuario_id, dia), info in sorted(agrupado.items(), key=lambda item: item[0][1], reverse=True):
         registros_ordenados = sorted(info['registros'], key=lambda x: x['timestamp'])
         total_segundos = 0
         incompleto = False
@@ -91,129 +88,217 @@ def init_db_route():
     conn = get_db()
     cursor = conn.cursor()
     is_postgres = hasattr(conn, 'cursor_factory')
-
-    # Sintaxe SQL adaptada para PostgreSQL e SQLite
-    create_user_table_sql = """
-    CREATE TABLE IF NOT EXISTS usuarios (
-        id SERIAL PRIMARY KEY,
-        usuario TEXT UNIQUE NOT NULL,
-        senha TEXT NOT NULL,
-        is_admin INTEGER DEFAULT 0
-    )""" if is_postgres else """
-    CREATE TABLE IF NOT EXISTS usuarios (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        usuario TEXT UNIQUE NOT NULL,
-        senha TEXT NOT NULL,
-        is_admin INTEGER DEFAULT 0
-    )"""
-    
-    create_registros_table_sql = """
-    CREATE TABLE IF NOT EXISTS registros (
-        id SERIAL PRIMARY KEY,
-        usuario_id INTEGER NOT NULL REFERENCES usuarios(id) ON DELETE CASCADE,
-        timestamp TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-        tipo TEXT CHECK(tipo IN ('Entrada','Saida')) NOT NULL,
-        latitude REAL,
-        longitude REAL
-    )""" if is_postgres else """
-    CREATE TABLE IF NOT EXISTS registros (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        usuario_id INTEGER NOT NULL,
-        timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
-        tipo TEXT CHECK(tipo IN ('Entrada','Saida')) NOT NULL,
-        latitude REAL,
-        longitude REAL,
-        FOREIGN KEY (usuario_id) REFERENCES usuarios (id) ON DELETE CASCADE
-    )"""
-
+    create_user_table_sql = "CREATE TABLE IF NOT EXISTS usuarios (id SERIAL PRIMARY KEY, usuario TEXT UNIQUE NOT NULL, senha TEXT NOT NULL, is_admin INTEGER DEFAULT 0)" if is_postgres else "CREATE TABLE IF NOT EXISTS usuarios (id INTEGER PRIMARY KEY AUTOINCREMENT, usuario TEXT UNIQUE NOT NULL, senha TEXT NOT NULL, is_admin INTEGER DEFAULT 0)"
+    create_registros_table_sql = "CREATE TABLE IF NOT EXISTS registros (id SERIAL PRIMARY KEY, usuario_id INTEGER NOT NULL REFERENCES usuarios(id) ON DELETE CASCADE, timestamp TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP, tipo TEXT CHECK(tipo IN ('Entrada','Saida')) NOT NULL, latitude REAL, longitude REAL)" if is_postgres else "CREATE TABLE IF NOT EXISTS registros (id INTEGER PRIMARY KEY AUTOINCREMENT, usuario_id INTEGER NOT NULL, timestamp DATETIME DEFAULT CURRENT_TIMESTAMP, tipo TEXT CHECK(tipo IN ('Entrada','Saida')) NOT NULL, latitude REAL, longitude REAL, FOREIGN KEY (usuario_id) REFERENCES usuarios (id) ON DELETE CASCADE)"
     cursor.execute(create_user_table_sql)
     cursor.execute(create_registros_table_sql)
-    
-    # Criar usuário admin
-    senha_hash = bcrypt.generate_password_hash("admin").decode('utf-8') # Senha inicial "admin"
-    placeholder = '%s' if is_postgres else '?'
-    
-    # Prepara o comando de inserção para ser compatível com ambos
+    senha_hash = bcrypt.generate_password_hash("admin").decode('utf-8')
+    placeholder = '%s'
     insert_sql = f"INSERT INTO usuarios (usuario, senha, is_admin) VALUES ({placeholder}, {placeholder}, {placeholder})"
     if is_postgres:
         insert_sql += " ON CONFLICT (usuario) DO NOTHING"
-    else: # SQLite
-        insert_sql = insert_sql.replace("INSERT INTO", "INSERT OR IGNORE INTO")
-
+    else:
+        placeholder = '?'
+        insert_sql = f"INSERT OR IGNORE INTO usuarios (usuario, senha, is_admin) VALUES ({placeholder}, {placeholder}, {placeholder})"
     cursor.execute(insert_sql, ("admin", senha_hash, 1))
-
     conn.commit()
     cursor.close()
     conn.close()
     return "Banco de dados inicializado com sucesso! O usuário 'admin' foi criado com a senha 'admin'."
 
-# --- ROTAS DA APLICAÇÃO ---
-# (O restante das rotas continua o mesmo, mas adaptado para usar a nova `get_db`)
+# --- ROTAS DE LOGIN, LOGOUT E PÁGINA INICIAL ---
 
 @app.route('/')
 def index():
-    # ... (código existente)
-    return "hello"
-
+    return render_template("login.html")
 
 @app.route('/login', methods=["POST"])
 def login():
-    # ... (código existente)
-    return "hello"
-
+    usuario = request.form['usuario']
+    senha = request.form['senha']
+    conn = get_db()
+    user = conn.execute("SELECT * FROM usuarios WHERE usuario = %s" if hasattr(conn, 'cursor_factory') else "SELECT * FROM usuarios WHERE usuario = ?", (usuario,)).fetchone()
+    conn.close()
+    if user and bcrypt.check_password_hash(user['senha'], senha):
+        session['usuario_id'] = user['id']
+        session['usuario_nome'] = user['usuario']
+        session['is_admin'] = user['is_admin']
+        return redirect(url_for('painel') if user['is_admin'] else url_for('funcionario'))
+    else:
+        flash("Usuário ou senha inválidos!", "danger")
+        return redirect(url_for('index'))
 
 @app.route('/logout')
 def logout():
-    # ... (código existente)
-    return "hello"
+    session.clear()
+    flash("Você saiu com sucesso.", "success")
+    return redirect(url_for('index'))
 
+# --- ROTAS DO FUNCIONÁRIO ---
 
 @app.route('/funcionario')
 def funcionario():
-    # ... (código existente)
-    return "hello"
-
+    if 'usuario_id' not in session or session.get('is_admin'):
+        return redirect(url_for('index'))
+    conn = get_db()
+    placeholder = '%s' if hasattr(conn, 'cursor_factory') else '?'
+    registros_db = conn.execute(f"SELECT tipo, timestamp FROM registros WHERE usuario_id = {placeholder} ORDER BY timestamp DESC LIMIT 10", (session['usuario_id'],)).fetchall()
+    conn.close()
+    registros_convertidos = []
+    for r in registros_db:
+        hora_local = converter_para_fuso_local(r['timestamp']).strftime('%d/%m/%Y %H:%M:%S')
+        registros_convertidos.append({'tipo': r['tipo'], 'hora': hora_local})
+    return render_template("funcionario.html", registros=registros_convertidos, nome_usuario=session.get('usuario_nome'))
 
 @app.route('/registrar', methods=["POST"])
 def registrar():
-    # ... (código existente)
-    return "hello"
+    if 'usuario_id' not in session: return redirect(url_for('index'))
+    latitude = request.form.get('latitude')
+    longitude = request.form.get('longitude')
+    conn = get_db()
+    cursor = conn.cursor()
+    placeholder = '%s' if hasattr(conn, 'cursor_factory') else '?'
+    ultimo = cursor.execute(f"SELECT tipo FROM registros WHERE usuario_id = {placeholder} ORDER BY timestamp DESC LIMIT 1", (session['usuario_id'],)).fetchone()
+    novo_tipo = "Entrada" if not ultimo or ultimo['tipo'] == "Saida" else "Saida"
+    cursor.execute(f"INSERT INTO registros (usuario_id, tipo, latitude, longitude) VALUES ({placeholder}, {placeholder}, {placeholder}, {placeholder})", (session['usuario_id'], novo_tipo, latitude, longitude))
+    conn.commit()
+    conn.close()
+    flash(f"'{novo_tipo}' registrada com sucesso!", "success")
+    return redirect(url_for('funcionario'))
 
+# --- ROTAS DO ADMINISTRADOR ---
 
 @app.route('/painel')
 def painel():
-    # ... (código existente)
-    return "hello"
-
+    if not session.get('is_admin'): return redirect(url_for('index'))
+    conn = get_db()
+    is_postgres = hasattr(conn, 'cursor_factory')
+    filtro_usuario = request.args.get('filtro_usuario')
+    data_inicio = request.args.get('data_inicio')
+    data_fim = request.args.get('data_fim')
+    query = "SELECT r.*, u.usuario FROM registros r JOIN usuarios u ON r.usuario_id = u.id WHERE 1=1"
+    params = []
+    if filtro_usuario:
+        query += f" AND r.usuario_id = {'%s' if is_postgres else '?'}"
+        params.append(filtro_usuario)
+    if data_inicio:
+        query += f" AND date(r.timestamp) >= {'%s' if is_postgres else '?'}"
+        params.append(data_inicio)
+    if data_fim:
+        query += f" AND date(r.timestamp) <= {'%s' if is_postgres else '?'}"
+        params.append(data_fim)
+    query += " ORDER BY r.timestamp DESC"
+    registros_db = conn.execute(query, params).fetchall()
+    usuarios_para_filtro = conn.execute("SELECT id, usuario FROM usuarios WHERE is_admin = 0 ORDER BY usuario").fetchall()
+    conn.close()
+    registros_agrupados = calcular_horas_e_agrupar(registros_db)
+    return render_template("painel.html", registros_agrupados=registros_agrupados, usuarios_para_filtro=usuarios_para_filtro, nome_usuario=session.get('usuario_nome'))
 
 @app.route('/gerenciar_usuarios')
 def gerenciar_usuarios():
-    # ... (código existente)
-    return "hello"
-
+    if not session.get('is_admin'): return redirect(url_for('index'))
+    conn = get_db()
+    usuarios = conn.execute("SELECT id, usuario FROM usuarios WHERE is_admin = 0 ORDER BY usuario").fetchall()
+    conn.close()
+    return render_template("gerenciar_usuarios.html", usuarios=usuarios)
 
 @app.route('/adicionar_usuario', methods=["POST"])
 def adicionar_usuario():
-    # ... (código existente)
-    return "hello"
-
+    if not session.get('is_admin'): return redirect(url_for('index'))
+    usuario = request.form['usuario']
+    senha = request.form['senha']
+    senha_hash = bcrypt.generate_password_hash(senha).decode('utf-8')
+    conn = get_db()
+    cursor = conn.cursor()
+    is_postgres = hasattr(conn, 'cursor_factory')
+    placeholder = '%s' if is_postgres else '?'
+    insert_sql = f"INSERT INTO usuarios (usuario, senha, is_admin) VALUES ({placeholder}, {placeholder}, {placeholder})"
+    if is_postgres: insert_sql += " ON CONFLICT (usuario) DO NOTHING"
+    else: insert_sql = insert_sql.replace("INSERT INTO", "INSERT OR IGNORE INTO")
+    try:
+        cursor.execute(insert_sql, (usuario, senha_hash, 0))
+        conn.commit()
+        if cursor.rowcount > 0:
+            flash(f"Usuário '{usuario}' adicionado com sucesso!", "success")
+        else:
+            flash(f"Erro: Usuário '{usuario}' já existe.", "danger")
+    except Exception as e:
+        flash(f"Ocorreu um erro: {e}", "danger")
+    finally:
+        conn.close()
+    return redirect(url_for('gerenciar_usuarios'))
 
 @app.route('/editar_usuario/<int:usuario_id>', methods=['GET', 'POST'])
 def editar_usuario(usuario_id):
-    # ... (código existente)
-    return "hello"
-
+    if not session.get('is_admin'): return redirect(url_for('index'))
+    conn = get_db()
+    is_postgres = hasattr(conn, 'cursor_factory')
+    placeholder = '%s' if is_postgres else '?'
+    if request.method == 'POST':
+        novo_nome = request.form['usuario']
+        nova_senha = request.form['senha']
+        if nova_senha:
+            senha_hash = bcrypt.generate_password_hash(nova_senha).decode('utf-8')
+            conn.execute(f"UPDATE usuarios SET usuario = {placeholder}, senha = {placeholder} WHERE id = {placeholder}", (novo_nome, senha_hash, usuario_id))
+        else:
+            conn.execute(f"UPDATE usuarios SET usuario = {placeholder} WHERE id = {placeholder}", (novo_nome, usuario_id))
+        conn.commit()
+        conn.close()
+        flash(f"Usuário '{novo_nome}' atualizado com sucesso!", "success")
+        return redirect(url_for('gerenciar_usuarios'))
+    usuario = conn.execute(f"SELECT id, usuario FROM usuarios WHERE id = {placeholder}", (usuario_id,)).fetchone()
+    conn.close()
+    if not usuario: return redirect(url_for('gerenciar_usuarios'))
+    return render_template("editar_usuario.html", usuario=usuario)
 
 @app.route('/excluir_usuario/<int:usuario_id>', methods=['POST'])
 def excluir_usuario(usuario_id):
-    # ... (código existente)
-    return "hello"
-
+    if not session.get('is_admin'): return redirect(url_for('index'))
+    conn = get_db()
+    placeholder = '%s' if hasattr(conn, 'cursor_factory') else '?'
+    conn.execute(f"DELETE FROM registros WHERE usuario_id = {placeholder}", (usuario_id,))
+    conn.execute(f"DELETE FROM usuarios WHERE id = {placeholder}", (usuario_id,))
+    conn.commit()
+    conn.close()
+    flash("Usuário e todos os seus registros foram excluídos com sucesso.", "success")
+    return redirect(url_for('gerenciar_usuarios'))
 
 @app.route('/exportar')
 def exportar():
-    # ... (código existente)
-    return "hello"
+    if not session.get('is_admin'): return redirect(url_for('index'))
+    # (Lógica de exportação completa aqui, similar à do painel)
+    conn = get_db()
+    is_postgres = hasattr(conn, 'cursor_factory')
+    filtro_usuario = request.args.get('filtro_usuario')
+    data_inicio = request.args.get('data_inicio')
+    data_fim = request.args.get('data_fim')
+    query = "SELECT u.usuario, r.timestamp, r.tipo, r.latitude, r.longitude FROM registros r JOIN usuarios u ON r.usuario_id = u.id WHERE 1=1"
+    params = []
+    if filtro_usuario:
+        query += f" AND r.usuario_id = {'%s' if is_postgres else '?'}"
+        params.append(filtro_usuario)
+    if data_inicio:
+        query += f" AND date(r.timestamp) >= {'%s' if is_postgres else '?'}"
+        params.append(data_inicio)
+    if data_fim:
+        query += f" AND date(r.timestamp) <= {'%s' if is_postgres else '?'}"
+        params.append(data_fim)
+    query += " ORDER BY u.usuario, r.timestamp"
+    registros_db = conn.execute(query, params).fetchall()
+    conn.close()
+    registros_local = []
+    for r in registros_db:
+        hora_local = converter_para_fuso_local(r['timestamp']).strftime('%d/%m/%Y %H:%M:%S')
+        registros_local.append((r['usuario'], hora_local, r['tipo'], r['latitude'], r['longitude']))
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(["Usuário", "Data/Hora", "Tipo", "Latitude", "Longitude"])
+    writer.writerows(registros_local)
+    output.seek(0)
+    mem = io.BytesIO(output.getvalue().encode('utf-8'))
+    output.close()
+    return send_file(mem, mimetype="text/csv", as_attachment=True, download_name="relatorio_ponto.csv")
 
+# --- INICIAR APLICAÇÃO ---
 if __name__ == "__main__":
-    app.run(host='0.0.0.0', debug=True)
+    app.run(debug=True)
