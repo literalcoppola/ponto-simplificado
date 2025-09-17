@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Registro de Ponto</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body class="container py-4">
+
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <h2>Registro de Ponto</h2>
+        <a href="/logout" class="btn btn-danger">Sair</a>
+    </div>
+  
+    <h4 class="fw-normal mb-4" style="color: #a0aec0;">Olá, <span style="color: #f59e0b;">{{ nome_usuario }}</span>!</h4>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        {% for category, message in messages %}
+          <div class="alert alert-{{ category }} alert-dismissible fade show" role="alert">
+            {{ message }}
+            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+          </div>
+        {% endfor %}
+      {% endif %}
+    {% endwith %}
+
+    <form id="ponto-form" method="POST" action="/registrar" class="my-4 d-grid">
+        <input type="hidden" name="latitude" id="latitude">
+        <input type="hidden" name="longitude" id="longitude">
+        <button type="submit" class="btn btn-success btn-lg py-3">Registrar Entrada/Saída</button>
+    </form>
+
+    <h4 class="mt-5">Seus últimos registros</h4>
+    <div class="table-responsive">
+        <table class="table table-striped table-hover">
+            <thead>
+                <tr>
+                    <th>Tipo</th>
+                    <th>Data/Hora</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for r in registros %}
+                <tr>
+                    <td>
+                        <span class="badge {{ 'bg-success' if r[0] == 'Entrada' else 'bg-warning text-dark' }}">{{ r[0] }}</span>
+                    </td>
+                    <td>{{ r[1] }}</td>
+                </tr>
+                {% else %}
+                <tr>
+                    <td colspan="2" class="text-center text-muted">Nenhum registro encontrado.</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    </body>
+</html>

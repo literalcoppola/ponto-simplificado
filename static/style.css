@@ -1,0 +1,124 @@
+/* Paleta de Cores:
+   Cor Fundo: #1a202c (Azul super escuro)
+   Cor Componentes: #2d3748 (Azul escuro/cinza)
+   Cor Borda/Detalhe: #4a5568 (Cinza azulado)
+   Cor Destaque Principal: #3b82f6 (Azul vibrante)
+   Cor Destaque Secundário: #f59e0b (Laranja)
+   Cor Texto: #e2e8f0 (Branco/Cinza claro)
+   Cor Texto Secundário: #a0aec0 (Cinza médio)
+*/
+
+body {
+    background-color: #1a202c;
+    color: #e2e8f0;
+}
+
+.card {
+    background-color: #2d3748;
+    border: 1px solid #4a5568;
+}
+
+.form-control {
+    background-color: #4a5568;
+    border: 1px solid #4a5568;
+    color: #e2e8f0;
+}
+
+.form-control:focus {
+    background-color: #4a5568;
+    border-color: #3b82f6;
+    color: #e2e8f0;
+    box-shadow: 0 0 0 0.25rem rgba(59, 130, 246, 0.25);
+}
+
+.form-control::placeholder {
+    color: #a0aec0;
+}
+
+.btn-primary {
+    background-color: #3b82f6;
+    border-color: #3b82f6;
+}
+
+.btn-primary:hover {
+    background-color: #2563eb;
+    border-color: #2563eb;
+}
+
+.btn-outline-secondary {
+    color: #a0aec0;
+    border-color: #4a5568;
+}
+
+.btn-outline-secondary:hover {
+    background-color: #4a5568;
+    color: #e2e8f0;
+}
+
+.btn-success {
+    background-color: #10b981;
+    border-color: #10b981;
+}
+
+.btn-danger {
+    background-color: #ef4444;
+    border-color: #ef4444;
+}
+
+.btn-warning {
+    background-color: #f59e0b;
+    border-color: #f59e0b;
+    color: #1a202c;
+}
+
+.table {
+    --bs-table-bg: #2d3748;
+    --bs-table-striped-bg: #4a5568;
+    --bs-table-color: #e2e8f0;
+    --bs-table-border-color: #4a5568;
+    --bs-table-hover-bg: #4a5568;
+}
+
+.table-dark {
+    --bs-table-bg: #3b82f6;
+    --bs-table-color: white;
+    --bs-table-border-color: #2563eb;
+}
+
+.list-group-item {
+    background-color: #2d3748;
+    border-color: #4a5568;
+}
+
+.text-muted {
+    color: #a0aec0 !important;
+}
+
+a {
+    color: #f59e0b;
+}
+
+a:hover {
+    color: #d97706;
+}
+
+.alert-success {
+    background-color: #10b981;
+    color: white;
+    border-color: #059669;
+}
+.alert-danger {
+    background-color: #ef4444;
+    color: white;
+    border-color: #dc2626;
+}
+
+/* =============================================== */
+/* AJUSTES DE LEGIBILIDADE PARA O TEMA ESCURO      */
+/* =============================================== */
+
+/* Melhora a cor dos textos de formulário e cabeçalhos */
+.form-label,
+.card-header {
+    color: #e2e8f0; /* Usa a cor principal de texto para alta visibilidade */
+}

@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Painel do Administrador</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body class="container py-4">
+
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <h2>Painel do Admin</h2>
+        <a href="/logout" class="btn btn-danger">Sair</a>
+    </div>
+    <h4 class="fw-normal mb-4" style="color: #a0aec0;">Olá, <span style="color: #f59e0b;">{{ nome_usuario }}</span>!</h4>
+
+    <div class="card mb-4">
+        <div class="card-header fw-bold">Filtros e Ações</div>
+        <div class="card-body">
+            <form method="GET" action="/painel" class="row g-3 align-items-end">
+                <div class="col-md">
+                    <label for="filtro_usuario" class="form-label">Funcionário</label>
+                    <select name="filtro_usuario" id="filtro_usuario" class="form-select">
+                        <option value="">Todos</option>
+                        {% for user in usuarios_para_filtro %}
+                        <option value="{{ user.id }}" {{ 'selected' if user.id|string == request.args.get('filtro_usuario') }}>{{ user.usuario }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md">
+                    <label for="data_inicio" class="form-label">De</label>
+                    <input type="date" name="data_inicio" id="data_inicio" class="form-control" value="{{ request.args.get('data_inicio', '') }}">
+                </div>
+                <div class="col-md">
+                    <label for="data_fim" class="form-label">Até</label>
+                    <input type="date" name="data_fim" id="data_fim" class="form-control" value="{{ request.args.get('data_fim', '') }}">
+                </div>
+                <div class="col-md-auto">
+                    <button type="submit" class="btn btn-primary w-100">Filtrar</button>
+                </div>
+            </form>
+            <hr>
+            <div class="d-flex gap-2">
+                <a href="/exportar?{{ request.query_string.decode('utf-8') }}" class="btn btn-outline-secondary">Exportar para CSV</a>
+                <a href="/gerenciar_usuarios" class="btn btn-outline-secondary">Gerenciar Usuários</a>
+            </div>
+        </div>
+    </div>
+    
+    <div class="table-responsive">
+        <table class="table table-bordered table-hover">
+            <thead class="table-dark">
+                <tr>
+                    <th>Funcionário</th>
+                    <th>Data</th>
+                    <th>Registros do Dia</th>
+                    <th>Total de Horas</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for dia, info in registros_agrupados.items() %}
+                <tr>
+                    <td>{{ info.usuario }}</td>
+                    <td>{{ dia }}</td>
+                    <td>
+                        {% for reg in info.registros %}
+                            <span class="badge {{ 'bg-success' if reg.tipo == 'Entrada' else 'bg-warning text-dark' }}">{{ reg.tipo }}</span>
+                            {{ reg.hora }}
+                            {% if reg.latitude and reg.longitude %}
+                                <a href="https://www.google.com/maps/search/?api=1&query={{reg.latitude}},{{reg.longitude}}" target="_blank" class="ms-1" title="Ver no mapa">📍</a>
+                            {% endif %}
+                            <br>
+                        {% endfor %}
+                    </td>
+                    <td class="fw-bold {{ 'text-warning' if info.incompleto else '' }}">
+                        {{ info.total_horas }}
+                        {% if info.incompleto %}
+                            <span title="Dia com registros ímpares (entrada sem saída ou vice-versa).">⚠️</span>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% else %}
+                <tr>
+                    <td colspan="4" class="text-center text-muted">Nenhum registro encontrado para os filtros selecionados.</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+</body>
+</html>
